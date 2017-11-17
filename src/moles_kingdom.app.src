@@ -1,0 +1,19 @@
+{application, moles_kingdom,
+ [{description, "Moles (A blockchain node) Playground"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, { moles_kingdom_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+	cobwoy,
+	ebus,
+	jsone
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
