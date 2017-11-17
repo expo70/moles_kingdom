@@ -10,7 +10,7 @@
 %% ----------------------------------------------------------------------------
 %% API
 %% ----------------------------------------------------------------------------
-start() -> {ok,_} = application:ensure_all_started(moles_kingodom).
+start() -> {ok,_} = application:ensure_all_started(moles_kingdom).
 
 stop() -> application:stop(moles_kingdom).
 
@@ -24,7 +24,7 @@ start(_StartType, _StartArgs) ->
 			{"/websocket", ws_handler, []}
 		]}
 	]),
-	{ok,_} = cowboy:start_clear(http, [{port, 443}], #{
+	{ok,_} = cowboy:start_clear(http, [{port, 8081}], #{
 		env => #{dispatch => Dispatch}
 	}),
     moles_kingdom_sup:start_link().
