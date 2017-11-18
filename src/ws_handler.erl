@@ -19,12 +19,12 @@
 %% cowboy_websocket callbacks
 %% ----------------------------------------------------------------------------
 % NOTE: init() is not excecuted in the handler process
-init(Req, State) ->
-	{{Host, Port}, _} = cowboy_req:peer(Req),
+init(Req, _State) ->
+	{Host, Port} = cowboy_req:peer(Req),
 	PeerName = list_to_binary(string:join([inet_parse:ntoa(Host),
 		":", io_lib:format("~p", [Port])], "")),
 	
-	{cowboy_websocket, Req, State#state{peer_name=PeerName}}.
+	{cowboy_websocket, Req, #state{peer_name=PeerName}}.
 
 
 websocket_init(State) ->
@@ -35,19 +35,30 @@ websocket_init(State) ->
 
 
 %% binary text received through websocket
+%%
+%% JSON inputs:
+%% {"cmd" : "sub",   "coord" : [x,y]}
+%% {"cmd" : "unsub", "coord" : [x,y]}
 websocket_handle({text, CmdJSON}, State) ->
 	Tid = State#state.tid_subs,
-	Cmd = jsone:decode(CmdJSON),
+	#{<<"cmd">> := Cmd, <<"coord">> := Coord} = jsone:decode(CmdJSON),
 
 	Msg =
 	case Cmd of
-		{sub,   Coordinate} ->
-			true = ets:insert(Tid, Coordinate),
-			{ebus:sub(State#state.handler, Coordinate), Coordinate};
-		{unsub, Coordinate} ->
-			true = ets:delete(Tid, Coordinate),
-			{ebus:unsub(State#state.handler, Coordinate), Coordinate};
-		_Unknown -> {error, unknown_command}
+		<<"sub">> ->
+			% we do not detect duplicated subs
+			true = ets:insert(Tid, {Coord}),
+			case ebus:sub(State#state.handler, Coord) of
+				ok -> #{<<"error">> => <<"no_error">>};
+				{error, Reason} -> #{<<"error">> => Reason}
+			end;
+		<<"unsub">> ->
+			% we do not detect unsubs of subscribed topics
+			true = ets:delete(Tid, {Coord}),
+			case ebus:unsub(State#state.handler, Coord) of
+				ok -> #{<<"error">> => <<"no_error">>};
+				{error, Reason} -> #{<<"error">> => Reason}
+			end
 	end,
 
 	MsgJSON = jsone:encode(Msg),
@@ -67,14 +78,21 @@ websocket_info(_Info, State) ->
 	{ok, State}.
 
 
-terminate(_Reason, _PartialReq, State) ->
-	Tid = State#state.tid_subs,
-
-	ets:foldl(fun(C,AccIn)-> [ebus:unsub(State#state.handler, C)|AccIn] end,
-		[], Tid),
+terminate(Reason, _PartialReq, State) ->
+	io:format("ws_handler:terminate, Reason=~p~n",[Reason]),
+	
+	case State#state.tid_subs of
+		undefined -> ok;
+		Tid ->
+			ets:foldl(fun({C},AccIn)-> [ebus:unsub(State#state.handler, C)|
+				AccIn] end, [], Tid)
+	end,
 	ok.
 
 
 %% called in the spawned process
 handle_msg(What, Pid) ->
 	Pid ! {message_published, What}.
+
+
+
