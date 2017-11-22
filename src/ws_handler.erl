@@ -41,12 +41,15 @@ websocket_init(State) ->
 %% {"cmd" : "unsub", "coord" : [x,y]}
 websocket_handle({text, CmdJSON}, State) ->
 	Tid = State#state.tid_subs,
-	#{<<"cmd">> := Cmd, <<"coord">> := Coord} = jsone:decode(CmdJSON),
+	Map = jsone:decode(CmdJSON),
 
 	Msg =
-	case Cmd of
+	case maps:get(<<"cmd">>, Map) of
+		<<"heartbeat">> ->
+			#{<<"error">> => <<"no_error">>};
 		<<"sub">> ->
 			% we do not detect duplicated subs
+			Coord = maps:get(<<"coord">>, Map),
 			true = ets:insert(Tid, {Coord}),
 			io:format("try to subscribe topic: ~p~n", [Coord]),
 			case ebus:sub(State#state.handler, Coord) of
@@ -55,6 +58,7 @@ websocket_handle({text, CmdJSON}, State) ->
 			end;
 		<<"unsub">> ->
 			% we do not detect unsubs of subscribed topics
+			Coord = maps:get(<<"coord">>, Map),
 			true = ets:delete(Tid, {Coord}),
 			io:format("try to unsubscribe topic: ~p~n", [Coord]),
 			case ebus:unsub(State#state.handler, Coord) of
