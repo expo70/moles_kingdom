@@ -48,6 +48,7 @@ websocket_handle({text, CmdJSON}, State) ->
 		<<"sub">> ->
 			% we do not detect duplicated subs
 			true = ets:insert(Tid, {Coord}),
+			io:format("try to subscribe topic: ~p~n", [Coord]),
 			case ebus:sub(State#state.handler, Coord) of
 				ok -> #{<<"error">> => <<"no_error">>};
 				{error, Reason} -> #{<<"error">> => Reason}
@@ -55,6 +56,7 @@ websocket_handle({text, CmdJSON}, State) ->
 		<<"unsub">> ->
 			% we do not detect unsubs of subscribed topics
 			true = ets:delete(Tid, {Coord}),
+			io:format("try to unsubscribe topic: ~p~n", [Coord]),
 			case ebus:unsub(State#state.handler, Coord) of
 				ok -> #{<<"error">> => <<"no_error">>};
 				{error, Reason} -> #{<<"error">> => Reason}
