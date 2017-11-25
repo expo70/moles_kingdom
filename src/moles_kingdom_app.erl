@@ -24,9 +24,12 @@ start(_StartType, _StartArgs) ->
 			{"/websocket", ws_handler, []}
 		]}
 	]),
-	{ok,_} = cowboy:start_clear(http, [{port, 8081}], #{
+	{ok,_} = cowboy:start_clear(http, [{port, 8080}], #{
 		env => #{dispatch => Dispatch}
 	}),
+
+	%pong = 
+	net_adm:ping('mole0@127.0.0.1'), %FIXME
     moles_kingdom_sup:start_link().
 
 
