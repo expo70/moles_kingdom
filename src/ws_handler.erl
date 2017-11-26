@@ -10,7 +10,6 @@
 -record(state,
 	{
 		peer_name,
-		handler,
 		tid_subs
 	}).
 
@@ -28,10 +27,20 @@ init(Req, _State) ->
 
 
 websocket_init(State) ->
-	Handler = ebus_proc:spawn_handler(fun handle_msg/2, [self()]),
 	TidSubs = ets:new(subs, []),
 
-	{ok, State#state{handler=Handler, tid_subs=TidSubs}}.
+	{ok, State#state{tid_subs=TidSubs}}.
+
+
+%% Current lmitation:
+%%
+%% web client <-> ws_handler <-> ErlBus <- moles
+%%          websocket         sub      pub
+%%
+%% Status updates are always pushed by moles. Web client does not obtain initial
+%% states when it connect to the ws_handler because there is no way for the
+%% client to tell the moles to push the status at that time; The client must
+%% wait for the next update.
 
 
 %% binary text received through websocket
@@ -50,18 +59,24 @@ websocket_handle({text, CmdJSON}, State) ->
 		<<"sub">> ->
 			% we do not detect duplicated subs
 			Coord = maps:get(<<"coord">>, Map),
-			true = ets:insert(Tid, {Coord}),
 			io:format("try to subscribe topic: ~p~n", [Coord]),
-			case ebus:sub(State#state.handler, Coord) of
+			% in ebus_proc:spawn_handler(Fun, Args, Opts),
+			% call back fun is invoked as
+			% apply(erlang,apply,[Fun, [Message|Args]])
+			Handler = ebus_proc:spawn_handler(fun handle_msg/3,
+				[Coord, self()]),
+			true = ets:insert(Tid, {Coord, Handler}),
+			case ebus:sub(Handler, Coord) of
 				ok -> #{<<"error">> => <<"no_error">>};
 				{error, Reason} -> #{<<"error">> => Reason}
 			end;
 		<<"unsub">> ->
 			% we do not detect unsubs of subscribed topics
 			Coord = maps:get(<<"coord">>, Map),
-			true = ets:delete(Tid, {Coord}),
 			io:format("try to unsubscribe topic: ~p~n", [Coord]),
-			case ebus:unsub(State#state.handler, Coord) of
+			{Coord, Handler} = ets:lookup(Tid, Coord),
+			true = ets:delete(Tid, Coord),
+			case ebus:unsub(Handler, Coord) of
 				ok -> #{<<"error">> => <<"no_error">>};
 				{error, Reason} -> #{<<"error">> => Reason}
 			end
@@ -75,7 +90,7 @@ websocket_handle(_InFrame, State) ->
 	{ok, State}.
 
 
-websocket_info({message_published, What}, State) ->
+websocket_info({message_published, What, _Coord}, State) ->
 	MsgJSON = jsone:encode(What),
 
 	{reply, {text, MsgJSON}, State};
@@ -90,15 +105,15 @@ terminate(Reason, _PartialReq, State) ->
 	case State#state.tid_subs of
 		undefined -> ok;
 		Tid ->
-			ets:foldl(fun({C},AccIn)-> [ebus:unsub(State#state.handler, C)|
+			ets:foldl(fun({C,H},AccIn)-> [ebus:unsub(H, C)|
 				AccIn] end, [], Tid)
 	end,
 	ok.
 
 
 %% called in the spawned process
-handle_msg(What, Pid) ->
-	Pid ! {message_published, What}.
+handle_msg(What, Coord, Pid) ->
+	Pid ! {message_published, What, Coord}.
 
 
 
